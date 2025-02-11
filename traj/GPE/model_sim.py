@@ -83,7 +83,7 @@ def _lin_net(nlayer=3, dim_in=128, dim_out=128):
     return nn.Identity()
 
 def _num_nn(name):
-    d = {'XY': 2, 'XYVV': 2, 'XYDD': 2, 'DSAJ': 2, 'XYRLG': 2, 'XYG': 2, 'XYsG': 2, 'XYs': 2, 'XYGXY': 2, 'XYsGXY': 2, 'XYSARD': 2}
+    d = {'XY': 2, 'XYVV': 2, 'XYDD': 2, 'XYRLG': 2, 'XYG': 2,  'XYSARD': 2}
     return d[name] if name in d else 3
 
 class BaseSimModel(nn.Module):
