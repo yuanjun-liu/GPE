@@ -9,14 +9,13 @@ from torch.utils.data.dataloader import DataLoader
 import torch
 import torch.nn as nn
 import numpy as np
-from traj.GPE.GPE import GPE, _lin_net
+from traj.GPE.GPE import GPE
 from traj.GPE.baseline import *
 from traj.GPE.loaddata import migrate_space, dxy, ts_max_len, ts_min_len, traj_mean_len, load_traj
 import traj.GPE.loaddata as lld
-from _tool.SysMonitor import GroupLogS
-print = GroupLogS(log_dir())
+from _tool.SysMonitor import GroupLogS,LogToTxt
+print = GroupLogS(log_dir(), cls=LogToTxt) 
 device = auto_device()
-dim_ebd, dim_hid = (128, 128)
 num_layer = 2
 bidir = True
 epoch_max = 20
@@ -77,6 +76,12 @@ class BaseTrajDataset(torch.utils.data.Dataset):
 def cut_len(ts, ls):
     return ts[:, :max(ls)]
 
+def _lin_net(nlayer=3, dim_in=128, dim_out=128):
+    dim = max(dim_in, dim_out)
+    if nlayer == 2: return nn.Sequential(nn.Linear(dim_in, dim), nn.SiLU(), nn.Linear(dim, dim_out))
+    elif nlayer == 3: return nn.Sequential(nn.Linear(dim_in, dim), nn.SiLU(), nn.Linear(dim, dim), nn.SiLU(), nn.Linear(dim, dim_out))
+    return nn.Identity()
+
 def _num_nn(name):
     d = {'XY': 2, 'XYVV': 2, 'XYDD': 2, 'DSAJ': 2, 'XYRLG': 2, 'XYG': 2, 'XYsG': 2, 'XYs': 2, 'XYGXY': 2, 'XYsGXY': 2, 'XYSARD': 2}
     return d[name] if name in d else 3
@@ -84,7 +89,7 @@ def _num_nn(name):
 class BaseSimModel(nn.Module):
     def __init__(self, ebd: nn.Module, ename, dim_ebd, dim_hid, dim_out, num_layer=2, bidir=True, device=auto_device()) -> None:
         super(BaseSimModel, self).__init__()
-        self.ebd = ebd if 'GPEwT' in ename else nn.Sequential(ebd, _lin_net(_num_nn(ename), dim_ebd, dim_ebd))
+        self.ebd =nn.Sequential(ebd, _lin_net(_num_nn(ename), dim_ebd, dim_ebd))
         self.dim_hid, self.bidir, self.num_layer, self.device = (dim_hid, bidir, num_layer, device)
         self.lstm = nn.LSTM(dim_ebd, dim_hid, num_layer, bidirectional=bidir)
         self.dim2 = dim_hid * 2 if bidir else dim_hid
@@ -98,7 +103,7 @@ class BaseSimModel(nn.Module):
         len_mask = len_mask.unsqueeze(-1).expand(x.shape)
         x = x * len_mask
         x = x.transpose(0, 1).contiguous()
-        h0 = torch.zeros((self.num_layer * (2 if self.bidir else 1), bs, dim_hid)).to(self.device)
+        h0 = torch.zeros((self.num_layer * (2 if self.bidir else 1), bs, self.dim_hid)).to(self.device)
         c0 = torch.zeros_like(h0)
         x, (h, c) = self.lstm(x, (h0, c0))
         if self.bidir:
@@ -108,10 +113,10 @@ class BaseSimModel(nn.Module):
         x = self.l2(self.l1(x))
         return x
 
-def name2ebd(method_name: str, city: str) -> nn.Module:
-    kw = {'device': device, 'dim': dim_ebd, 'city': city, 'nxy': None, 'dxy': dxy(city)}
+def name2ebd(method_name: str, city: str,dim) -> nn.Module:
+    kw = {'device': device, 'dim': dim, 'city': city, 'nxy': None, 'dxy': dxy(city)}
     if 'GPE' in method_name:
-        return GPE(dim=dim_ebd,name=method_name,device=device)
+        return GPE(dim=dim, name=method_name, device=device)
     elif 'SINW' in method_name:
         return SINW(**kw)
     elif 'XYVV' in method_name:
@@ -131,25 +136,21 @@ def name2ebd(method_name: str, city: str) -> nn.Module:
     elif 'Gxy' in method_name:
         return GxyEbd(**kw)
 
-def _sim_model_path(method_name: str, train_city: str):
-    ebd: nn.Module = name2ebd(method_name, train_city)
-    model = BaseSimModel(ebd, method_name, dim_ebd, dim_hid, dim_hid, num_layer=num_layer, bidir=bidir)
-    path = os.path.join(out_dir('ckpt_sim'), f'{method_name}_{train_city}_{lld.nTrain}-{lld.nTest}_d{dim_ebd}n{num_layer}b{(1 if bidir else 0)}_d{augment_drop_rate}n{augment_noise_size}_l{ts_max_len}{ts_min_len}b{batch_size}e{epoch_min}s{earlystop}.th')
-    if os.path.exists(path):
-        try:
-            load_weight(model, path)
-        except:
-            print('can not load ', method_name, ' on ', train_city)
+def _sim_model_path(method_name: str, train_city: str,dim):
+    ebd: nn.Module = name2ebd(method_name, train_city,dim)
+    model = BaseSimModel(ebd, method_name, dim, dim, dim, num_layer=num_layer, bidir=bidir)
+    path = os.path.join(out_dir('ckpt_sim'), f'{method_name}_{train_city}_{lld.nTrain}-{lld.nTest}_d{dim}n{num_layer}b{(1 if bidir else 0)}_d{augment_drop_rate}n{augment_noise_size}_l{ts_max_len}{ts_min_len}b{batch_size}e{epoch_min}s{earlystop}.th')
+    if os.path.exists(path): load_weight(model, path)
     return (model, path)
 
-def train_sim(method_name: str, train_city: str,if_exist=False):
-    model, path = _sim_model_path(method_name, train_city)
+def train_sim(method_name: str, train_city: str,dim,if_exist=False):
+    model, path = _sim_model_path(method_name, train_city,dim)
     if os.path.exists(path): return
     if if_exist:
         if os.path.exists(path):return time.time()- os.path.getmtime()
         else: return time.time()
-    print.set(method_name + '/' + train_city + '-' + str(lld.nTrain), newfile=True)
-    print('train_method', method_name, train_city, lld.nTrain)
+    print.set(method_name + str(dim)+'/' + train_city + '-' + str(lld.nTrain), newfile=True)
+    print('train_method', method_name, dim, train_city, lld.nTrain)
     model = model.to(device)
     model.train()
     TS = load_traj(train_city)[0]
@@ -183,9 +184,9 @@ def train_sim(method_name: str, train_city: str,if_exist=False):
     print('finish train_method', method_name, train_city)
     print.unset()
 
-def infer_sim(method_name, train_city, to_city, TS, do_noise=False) -> Tensor:
+def infer_sim(method_name, train_city, to_city, TS, dim,do_noise=False) -> Tensor:
     """load(model,train_city), adapt(to_city), return model(ts)"""
-    model, path = _sim_model_path(method_name, train_city)
+    model, path = _sim_model_path(method_name, train_city,dim)
     assert os.path.exists(path), 'Model untrained'
     model.eval()
     model.to(device)

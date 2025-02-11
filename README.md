@@ -32,17 +32,5 @@ will automatically
 - train
 - print result table
 
-## cite
 
-waiting being accepted
-
-```txt
-@inproceedings{GPE,
-author = {Yuanjun Liu, Guanfeng Liu, Qingzhi Ma, Lei Zhao, An Liu},
-title = {GPE: Global Position Embedding for Trajectory Similarity Computation},
-year = {2025},
-booktitle = {ICDE},
-pages = {TODO},
-}
-```
 

@@ -9,10 +9,10 @@ class SINW(nn.Module):
 
     def __init__(self, dim, device, **kw):
         super(SINW, self).__init__()
-        self.w1 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True).to(device)
-        self.w2 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True).to(device)
-        self.w3 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True).to(device)
-        self.w4 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True).to(device)
+        self.w1 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True)
+        self.w2 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True)
+        self.w3 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True)
+        self.w4 = nn.Parameter(torch.rand(dim // 4) - 0.5, requires_grad=True)
         self.dim = dim
 
     def forward(self, T: Tensor):
@@ -20,8 +20,8 @@ class SINW(nn.Module):
         if bs:
             T = T.reshape(-1, len(T[0][0]))
         x, y = (T[:, 0], T[:, 1])
-        xs = x.unsqueeze(1).expand([len(x), 32])
-        ys = y.unsqueeze(1).expand([len(y), 32])
+        xs = x.unsqueeze(1).expand([len(x), self.dim//4])
+        ys = y.unsqueeze(1).expand([len(y), self.dim//4])
         sc = torch.concat([torch.sin(xs * self.w1), torch.cos(xs * self.w2), torch.sin(ys * self.w3), torch.cos(ys * self.w4)], dim=-1)
         if bs:
             sc = sc.reshape(bs, -1, self.dim)

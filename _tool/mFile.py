@@ -74,46 +74,6 @@ def parse_line(line: str, split, *type):
         res[i] = type[i](ss[i])
     return res
 
-def file_size(file):
-    return os.stat(file).st_size
-
-def file_time_create(file):
-    return os.stat(file).st_ctime
-
-def file_time_modify(file):
-    return os.stat(file).st_mtime
-
-def file_name(file, ex=False):
-    assert os.path.exists(file)
-    assert isinstance(file, str)
-    if os.path.isdir(file):
-        return os.path.dirname(file)
-    name = file.replace('\\', '/').split('/')[-1]
-    if ex:
-        return name
-    else:
-        return '.'.join(name.split('.')[:-1])
-
-def read_lines(f):
-    with open(f, 'r', encoding='utf-8') as f:
-        return f.readlines()
-
-def copy(res, dst):
-    import shutil
-    assert os.path.exists(res)
-    if os.path.isdir(res):
-        if not os.path.exists(dst):
-            os.makedirs(dst)
-    elif not os.path.exists(os.path.dirname(dst)):
-        os.makedirs(os.path.dirname(dst))
-    if os.path.isdir(res):
-        for root, dirs, files in os.walk(res):
-            for file in files:
-                r = os.path.join(root, file)
-                d = os.path.join(dst, '.' + r[len(res):])
-                copy(r, d)
-    else:
-        shutil.copy(res, dst)
 
 def read_lines_iter(f, skip_lines=0, encoding='utf-8', block='500m'):
     with open(f, encoding=encoding) as f:
@@ -152,9 +112,3 @@ def read_lines_iter(f, skip_lines=0, encoding='utf-8', block='500m'):
                         yield (line + '\n')
         raise 'bad block'
 
-def read_xline(file, x, skip_lines=0):
-    with open(file, 'r', encoding='utf-8') as f:
-        for i in range(skip_lines):
-            f.readline()
-        for i in range(x):
-            print(f.readline())

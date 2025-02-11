@@ -30,7 +30,7 @@ def loadt2(data: str, ntrain: int, ntest: int):
 
 def load_traj(data, ntest=nTest):
     return loadt2(data, nTrain, ntest)
-traj_mean_len = {'T-drive': 136, 'Porto': 53, 'Roma': 183, 'AIS': 39, 'SFBA': 37, 'GeoLife': 185, 'TaxiSH': 82}
+traj_mean_len = {'T-drive': 136, 'Porto': 53, 'Roma': 183, 'AIS': 39,  'GeoLife': 185, }
 
 def migrate_space(city_old, city_new, ts):
     """only cross city

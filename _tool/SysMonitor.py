@@ -5,258 +5,13 @@ import numpy as np
 from _tool.mTime import now_date_time
 import psutil
 from _tool.mFile import check_dir, log_dir
-from _tool.mList import T, append_line, flatten_fast, mdidx
+from _tool.mList import T, flatten_fast, mdidx
 from _tool.mIO import save, load
 from _tool.mMath import multi, to_base, ranki_same
 
-def mem_process(pid=None):
-    """当前/指定pid 进程的内存占用"""
-    pid = os.getpid() if pid is None else pid
-    process = psutil.Process(pid)
-    memInfo = process.memory_info()
-    return memInfo.rss
-
-def cpurate():
-    return psutil.cpu_percent()
-
-def memrate():
-    return psutil.virtual_memory().percent
-
-def memfree():
-    return psutil.virtual_memory().free / 1024 / 1024
-
-def CpuMemCheck(cpu_rate=None, mem_rate=None, mem_mb=None, timout=None, timout_callback=sys.exit):
-    """
-    block if current_cpu_rate > cpu_rate or current_mem_rate > mem_rate or current_mem_free < mem_mb
-    :param cpu_rate: 0-100, None is 100
-    :param mem_rate: 0-100, None is 100
-    :param mem_mb: size MB of following code need, None is infinity
-    :param timout: exit if wait more time that timout
-    :param timout_callback: run timout_callback() if timout
-    :return:
-    """
-    t = 0
-    while True:
-        ok = True
-        if cpu_rate is not None and cpurate() > cpu_rate:
-            ok = False
-        if mem_rate is not None and memrate() > mem_rate:
-            ok = False
-        if mem_mb is not None and memfree() < mem_mb:
-            ok = False
-        if ok:
-            break
-        time.sleep(1)
-        if timout is not None:
-            t += 1
-            if t > timout and timout_callback is not None:
-                print('CpuMemCheck timout')
-                timout_callback()
-
-def profile(fun, arg, sort_cum_tot: bool, to_file: bool, print_num: float):
-    funame = fun.__name__
-    import cProfile, pstats, io
-    pr = cProfile.Profile()
-    pr.enable()
-    print('profile', funame, ', ', *arg)
-    timer = Timer()
-    res = None
-    with timer:
-        res = fun(*arg)
-    print('time:', timer.time_avg())
-    print('result:\n', res, '\n')
-    pr.disable()
-    s = io.StringIO()
-    sortby = 'cumtime' if sort_cum_tot else 'tottime'
-    ps = pstats.Stats(pr, stream=s).sort_stats(sortby).print_stats(print_num)
-    ps.print_stats()
-    print(s.getvalue())
-    if to_file:
-        pr.dump_stats(funame + '.prof')
-        print('prof file at: {}.prof, and {}.csv'.format(funame, funame))
-        run_cmd1('flameprof {}.prof > {}.svg'.format(funame, funame))
-
-class Counter:
-
-    def __init__(self, start=0, _flock=None):
-        self._plock = ProcessLock()
-        self._tlock = ThreadLock()
-        self._flock = _flock
-        with self._tlock:
-            with self._plock:
-                self.val = start - 1
-
-    def __call__(self, *args: Any, **kwds: Any) -> int:
-        with self._tlock:
-            with self._plock:
-                self.val += 1
-                return self.val
-
-class Timer:
-
-    def __init__(self, cpu=False):
-        self.time_times: int = 0
-        self.time_sum: float = 0
-        self.time_last: float = 0
-        self.__time__doing: bool = False
-        self.__time_cpu = cpu
-
-    def tic(self, times=1):
-        assert self.__time__doing == False, 'Timer tictoc error'
-        self.__time__doing = True
-        self.time_times += times
-        self.time_last = time.process_time() if self.__time_cpu else time.time()
-
-    def toc(self):
-        t = time.process_time() if self.__time_cpu else time.time()
-        assert self.__time__doing == True, 'Timer tictoc error'
-        self.__time__doing = False
-        self.time_sum += t - self.time_last
-
-    def time_avg(self) -> float:
-        return self.time_sum / self.time_times
-
-    def __enter__(self):
-        self.tic()
-
-    def __exit__(self, *arg, **kw):
-        self.toc()
-
-    def time_clear(self):
-        self.time_times = 0
-        self.time_sum = 0
-        self.time_last = 0
-
-class LogMem:
-
-    def __init__(self, _flock=None) -> None:
-        self.data: dict = dict()
-        self._plock = ProcessLock()
-        self._tlock = ThreadLock()
-        self._flock = _flock
-
-    def __getitem__(self, idx):
-        if isinstance(idx, tuple):
-            d: dict = self.data
-            for i in idx:
-                assert isinstance(i, str)
-                if d is None:
-                    return None
-                d = d.get(i, None)
-            return d
-        else:
-            assert isinstance(idx, str)
-            return self.data[idx]
-
-    def __setitem__(self, idx, value):
-        if self._flock:
-            self._flock.acquire()
-        with self._plock, self._tlock:
-            d = self.data
-            if isinstance(idx, tuple):
-                for i in idx[:-1]:
-                    assert isinstance(i, str)
-                    if i not in d:
-                        d[i] = dict()
-                    if i in d and (not isinstance(d[i], dict)):
-                        raise IndexError('warning: logger traj is covered')
-                    d = d[i]
-                assert isinstance(idx[-1], str)
-                d[idx[-1]] = value
-            else:
-                assert isinstance(idx, str)
-                d[idx] = value
-        if self._flock:
-            self._flock.release()
-
-class LogJsonIdxs:
-
-    def __init__(self, name, _flock=None, refresh=True, mode='r', backup=True) -> None:
-        self.data: dict = dict()
-        self._file = name if '/' in name or '\\' in name else os.path.join(log_dir(), name) + '.json'
-        self._plock = ProcessLock()
-        self._tlock = ThreadLock()
-        self._flock = _flock
-        self._refresh = refresh
-        self._mode = mode
-        self._backup = backup
-        self._backfile = self._file + '.bk'
-        check_dir(self._file)
-        if 'r' in self._mode:
-            self.load()
-
-    def save(self):
-        assert 'w' in self._mode
-        with open(self._file, 'w') as f:
-            json.dump(self.data, f)
-        if self._backup:
-            with open(self._backfile, 'w') as f:
-                json.dump(self.data, f)
-
-    def load(self):
-        assert 'r' in self._mode
-        if os.path.exists(self._file):
-            try:
-                with open(self._file, 'r') as f:
-                    self.data = json.load(f)
-            except Exception as e:
-                pass
-
-    def __getitem__(self, idx):
-        x = self.__getitem(idx)
-        if x is not None:
-            return x
-        if self._refresh:
-            if self._flock:
-                self._flock.acquire()
-            with self._plock:
-                with self._tlock:
-                    self.load()
-            if self._flock:
-                self._flock.release()
-        return self.__getitem(idx)
-
-    def __getitem(self, idx):
-        if isinstance(idx, tuple):
-            d: dict = self.data
-            for i in idx:
-                assert isinstance(i, str)
-                if d is None:
-                    return None
-                d = d.get(i, None)
-            return d
-        else:
-            assert isinstance(idx, str)
-            return self.data[idx]
-
-    def __setitem__(self, idx, value):
-        if self._flock:
-            self._flock.acquire()
-        with self._plock, self._tlock:
-            if self._refresh:
-                self.load()
-            d = self.data
-            if isinstance(idx, tuple):
-                for i in idx[:-1]:
-                    assert isinstance(i, str)
-                    if i not in d:
-                        d[i] = dict()
-                    if i in d and (not isinstance(d[i], dict)):
-                        raise IndexError('warning: logger traj is covered')
-                    d = d[i]
-                assert isinstance(idx[-1], str)
-                d[idx[-1]] = value
-            else:
-                assert isinstance(idx, str)
-                d[idx] = value
-            if self._refresh:
-                self.save()
-        if self._flock:
-            self._flock.release()
-
 class LogToTxt:
 
-    def __init__(self, file, span=',', new_file=True, _flock=None, csv=False, prefix=True) -> None:
+    def __init__(self, file, span=',', newfile=True, _flock=None, csv=False, prefix=True) -> None:
         """
         :param file: "a:/1.txt" or "1"
         :param span:
@@ -274,7 +29,7 @@ class LogToTxt:
         if self._flock:
             self._flock.acquire()
         check_dir(self.__file)
-        if new_file:
+        if newfile:
             with self._plock:
                 with self._tlock:
                     if os.path.exists(self.__file):
@@ -333,13 +88,13 @@ class LogSimple:
         self(arg)
 
 class GroupLogS:
-
-    def __init__(self, basedir='./logs'):
+    def __init__(self, basedir='./logs',cls=LogSimple):
         self.basedir = basedir
-        self.logs = [LogSimple(os.path.join(self.basedir, 'log') + '.log', newfile=False)]
+        self.cls=cls
+        self.logs = [self.cls(os.path.join(self.basedir, 'log') + '.log', newfile=False)]
 
     def set(self, runningname: str, newfile=True):
-        self.logs.append(LogSimple(os.path.join(self.basedir, runningname) + '.log', newfile=newfile))
+        self.logs.append(self.cls(os.path.join(self.basedir, runningname) + '.log', newfile=newfile))
 
     def unset(self):
         if len(self.logs) > 1:
@@ -348,77 +103,6 @@ class GroupLogS:
     def __call__(self, *args: Any):
         self.logs[-1](*args)
 
-class LogBinIdxs(LogJsonIdxs):
-
-    def __init__(self, name, _flock=None, refresh=True, mode='rw') -> None:
-        self.data: dict = dict()
-        self._file = name if '/' in name or '\\' in name else os.path.join(log_dir(), name) + '.pk'
-        self._plock = ProcessLock()
-        self._tlock = ThreadLock()
-        self._flock = _flock
-        self._refresh = refresh
-        self._mode = mode
-        check_dir(self._file)
-        if 'r' in self._mode:
-            self.load()
-
-    def save(self):
-        save(self._file, self.data)
-        if self._backup:
-            save(self._backfile, self.data)
-
-    def load(self):
-        if os.path.exists(self._file):
-            try:
-                self.data = load(self._file)
-            except Exception as e:
-                pass
-if __name__ == '__main__':
-    ld = LogBinIdxs('taabb')
-    ld[1] = 2
-    ld['1', (1.2, 6)] = [1, 2, 3]
-    print(ld.data)
-
-class mPrintCapturer:
-
-    def __init__(self, out_err='out', callback=None, call_back_error=None):
-        assert out_err in ['out', 'err'], 'un support type'
-        self.__out_err = out_err
-        self.__back = None
-        self.t = ''
-        self.__call = callback
-        self.__call_error = call_back_error
-
-    def __enter__(self):
-        self.replace()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.restore()
-
-    def replace(self):
-        if self.__out_err == 'out':
-            self.__back = sys.stdout
-            sys.stdout = self
-        elif self.__out_err == 'err':
-            self.__back = sys.stderr
-            sys.stderr = self
-
-    def write(self, t):
-        self.t += t
-
-    def flush(self):
-        t = self.t
-        self.t = ''
-        return t
-
-    def restore(self):
-        if self.__out_err == 'out':
-            sys.stdout = self.__back
-        elif self.__out_err == 'err':
-            sys.stderr = self.__back
-
-    def __del__(self):
-        self.restore()
 
 def print_table(data_lines, col_names, col_span='\t ', table_name=''):
     n_col = len(col_names)

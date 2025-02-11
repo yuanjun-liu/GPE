@@ -225,22 +225,3 @@ def mcache(name=None, *data, **kws):
             print('save cache:', file)
         save(file, data)
 
-def cache_ifno_build(name, build_fun, build_arg=None, mcache_kw=None):
-    res = mcache(name) if mcache_kw is None else mcache(name, **mcache_kw)
-    if res is not None:
-        return res
-    res = build_fun() if build_arg is None else build_fun(*build_arg)
-    mcache(name, res) if mcache_kw is None else mcache(name, res, **mcache_kw)
-    return res
-
-def set_env(name: str, value: str):
-    name = 'py_env_' + name
-    os.environ[name] = value
-
-def get_env(name: str):
-    name = 'py_env_' + name
-    if name not in os.environ:
-        return None
-    return os.environ[name]
-if __name__ == '__main__':
-    pass

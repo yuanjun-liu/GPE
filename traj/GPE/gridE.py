@@ -4,6 +4,7 @@ import numpy as np
 from _tool.mFile import cache_dir
 import torch
 from torch import Tensor
+from gensim.models import Word2Vec
 from _nn.nData import reset_param_uniform, auto_device
 from _nn.nFile import load_weight, save_weight
 from _data.traj.load_trajs import traj_bbox
@@ -38,7 +39,7 @@ class GridSpace:
         return [list(self.p2g(t[:, 0], t[:, 1])) for t in ts]
 
     def wv_predefined_walk(self):
-        """for gensim.word2vec"""
+        """for gensim.word2vec, | - / \\"""
         res = []
         lines = [[self.nx * y + x for x in range(self.nx)] for y in range(self.ny)]
         res.extend(lines)
@@ -91,17 +92,16 @@ class GridEbd(torch.nn.Module):
         load_weight(self.ebd, self._path + '.th')
 
     def word2vec(self, ts=None):
-        if self._trained:
-            return
-        from gensim.models import Word2Vec
+        if self._trained: return
         tsg = self._space.wv_predefined_walk() if ts is None else self._space.ts2gs(ts)
         sents = [('g' + ' g'.join(map(str, t))).split() for t in tsg]
-        model = Word2Vec(sents, vector_size=self.dim, workers=4)
+        model = Word2Vec(sents, vector_size=self.dim, workers=4,sg=1,epochs=20)
         w2 = torch.zeros((self._space.num_grids + 1, self.dim))
         reset_param_uniform(w2, self.dim)
-        w = torch.Tensor(np.array([model.wv[f'g{i}'] if f'g{i}' in model.wv else w2[i] for i in range(self._space.num_grids + 1)]))
+        w = torch.Tensor(np.array([ model.wv[f'g{i}'] if f'g{i}' in model.wv else w2[i] for i in range(self._space.num_grids + 1)]))
         self.ebd = torch.nn.Embedding.from_pretrained(w)
         self.__save()
+
 
 class GxyEbd(torch.nn.Module):
 
@@ -178,3 +178,4 @@ class GxyEbd(torch.nn.Module):
             opt.step()
         model = model.cpu()
         self.__save()
+
