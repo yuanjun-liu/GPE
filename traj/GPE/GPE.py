@@ -29,8 +29,12 @@ class GPE(nn.Module):
         while True:
             while jz_power[p - 1]:
                 p += 1
-            for j in range(int(np.log(dim) / np.log(p))):
-                jz_power[p ** j - 1] = 1
+            # for j in range(int(np.log(dim) / np.log(p))):
+            #     jz_power[p ** j - 1] = 1
+            for j in range(dim):
+                jzp=p**j-1
+                if jzp>=dim:break
+                jz_power[jzp]=1
             le = int(np.ceil(-np.log(e) / np.log(p)))
             le = max(le, 1)
             le = min(le, dim // 4 - sum(jz_len))

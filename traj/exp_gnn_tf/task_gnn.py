@@ -5,10 +5,10 @@ sys.path.extend(['./', '../../', '../'])
 from _tool.mIO import mcache
 from _tool.mFile import out_dir
 from _data.vector.sim_task import rankvs, knnvd, knn_prec
-from traj.GPE.model_sim import infer_sim
+from traj.exp_gnn_tf.model_gnn import infer_gnn
 from traj.GPE.loaddata import rank_split_data, load_traj
 device = 'cpu'
-task_dir = 'tasks'
+task_dir = 'tasks_gnn'
 
 def prec_rank(rks: torch.Tensor):
     return (rks == 1).sum() / len(rks)
@@ -16,8 +16,8 @@ def prec_rank(rks: torch.Tensor):
 @mcache(redir=out_dir(task_dir))
 def infer_rank_split(method_name, from_data, to_data, dim,ntr, nte):
     TA, TB = rank_split_data(to_data, nte)
-    VA = infer_sim(method_name, from_data, to_data, TA,dim)
-    VB = infer_sim(method_name, from_data, to_data, TB,dim)
+    VA = infer_gnn(method_name, from_data, to_data, TA,dim)
+    VB = infer_gnn(method_name, from_data, to_data, TB,dim)
     return (VA, VB)
 
 @mcache(redir=out_dir(task_dir))
@@ -48,7 +48,7 @@ def migrate_knn_self(method_name, from_data, to_data, dim,ntr, nte, k):
     VQ1, VD1 = (VQ1.to(device), VD1.to(device))
     K1 = knnvd(VQ1, VD1, k)
     ts = load_traj(to_data, nte)[1]
-    VT = infer_sim(method_name, from_data, to_data, ts,dim)
+    VT = infer_gnn(method_name, from_data, to_data, ts,dim)
     K2 = knnvd(VT, VT, k)
     assert len(K1) == len(K2)
     K1, K2 = (K1.to(device), K2.to(device))
