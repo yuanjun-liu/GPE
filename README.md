@@ -64,7 +64,7 @@ including
 
 ### analyses
 
-base secetion
+base selection
 
 ```bash
 
